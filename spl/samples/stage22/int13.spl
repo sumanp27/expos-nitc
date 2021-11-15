@@ -1,0 +1,74 @@
+alias usersp R1;
+usersp = SP;
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 13]= SP;
+SP = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 11]*512 -1;
+alias num R2;
+num = [[[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 14] + 2*((usersp-5)/512)]*512 + (usersp-5)%512];
+
+if(num == 17) then//semget
+	[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 9] = 17;
+	alias count R3;
+	alias cpid R4;
+	cpid = [SYSTEM_STATUS_TABLE + 1];
+	alias index R5;
+	index = -1;
+	count = 0;
+	while(count<8) do
+		if([[PROCESS_TABLE + cpid*16 + 11]*512 + 2*count + 496]==-1) then//Semget finds a free entry in the per-process resource table.
+			index = count;
+			break;
+		endif;
+		count = count+1;
+	endwhile;
+	if(index == -1) then
+		R0 = -1;//Process has reached its limit of resources
+		[[[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 14] + 2*((usersp-1)/512)]*512 + (usersp-1)%512]=R0;
+		SP = usersp;
+		ireturn;
+	endif;
+	[[PROCESS_TABLE + cpid*16 + 11]*512 + 2*index + 496] = 1;
+	multipush(R1,R2,R3,R4,R5);
+	R1 = 6;//Acquire Semaphore 
+	R2 = cpid;
+	call MOD_0;
+	multipop(R1,R2,R3,R4,R5);
+	if(R0 == -1) then
+		R0 = -2;//Number of semaphores has reached its maximum
+		[[[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 14] + 2*((usersp-1)/512)]*512 + (usersp-1)%512] = R0;
+		SP = usersp;
+		ireturn;
+	endif;
+	[[PROCESS_TABLE + cpid*16 + 11]*512 + 2*index + 496 + 1] = R0;//index of the Semaphore table entry in the Per Process Resource Table entry
+	R0 = index;
+	[[[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 14] + 2*((usersp-1)/512)]*512 + (usersp-1)%512]= R0;
+	[PROCESS_TABLE + cpid*16 + 9] = 0;
+endif;
+
+if(num == 18) then //semrelease
+	[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 9] = 18;
+	alias semresid R3;
+	alias cpid R4;
+	cpid = [SYSTEM_STATUS_TABLE + 1];
+	semresid = [[[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 14] + 2*((usersp-4)/512)]*512 + (usersp-4)%512];	
+	if((semresid<0) || (semresid>7) || ([[PROCESS_TABLE + cpid*16 + 11]*512 + 496 + 2*semresid]!=1)) then
+		R0 = -1;
+		[[[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 14] + 2*((usersp-1)/512)]*512 + (usersp-1)%512] = R0;
+		SP = usersp;
+		ireturn;
+	endif;
+	multipush(R1,R2,R3,R4);
+	R1 = 7;//release semaphore
+	R2 = cpid;
+	R3 = [[PROCESS_TABLE + cpid*16 + 11]*512 + 2*semresid + 496 + 1];
+	call MOD_0;
+	multipop(R1,R2,R3,R4);
+	[[PROCESS_TABLE + cpid*16 +11]*512 + 496 + 2*semresid]= -1;//Invalidate the Per-Process resource table entry.
+	[[PROCESS_TABLE + cpid*16 +11]*512 + 496 + 2*semresid + 1] = -1;
+	
+	[PROCESS_TABLE + cpid*16 + 9] = 0;
+	R0 = 0;
+	[[[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 14] + 2*((usersp-1)/512)]*512 + (usersp-1)%512]= R0;
+endif;
+SP = usersp;
+ireturn;
+

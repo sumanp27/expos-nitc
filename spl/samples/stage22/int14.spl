@@ -1,0 +1,97 @@
+alias userSP R10;
+userSP=SP;
+[PROCESS_TABLE+([SYSTEM_STATUS_TABLE+1]*16)+13]=SP; //saving user stack pointer
+SP=[PROCESS_TABLE+([SYSTEM_STATUS_TABLE+1]*16)+11]*512-1;//switching to kernal stack
+alias functionNum R9;
+functionNum=[[PTBR+2*((userSP-5)/512)]*512 + (userSP-5)%512];
+if(functionNum==19) then // SemLock
+    [PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=19;
+    alias semID R11;
+    alias pid R12;
+    pid=[SYSTEM_STATUS_TABLE+1];
+    semID=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    if(semID<0) then
+        R0=-1;
+        [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    if(semID>7) then
+        R0=-1;
+        [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    if([[PROCESS_TABLE +pid*16+11]*512+2*semID+496]!=1) then//invalidentry in the Per Process Resource Table 
+        R0=-1;
+        [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    alias semTableID R13;
+    semTableID=[[PROCESS_TABLE +pid*16+11]*512+2*semID+1+496];
+    while([SEMAPHORE_TABLE+4*semTableID]!=pid) do
+        if([SEMAPHORE_TABLE+4*semTableID]==-1) then
+            break;
+        endif;
+        [PROCESS_TABLE+16*pid+4]=WAIT_SEMAPHORE;
+        [PROCESS_TABLE+16*pid+5]=semTableID;
+        multipush(R1,R2,R9,R10,R11,R12,R13);
+        call SCHEDULER;
+        multipop(R1,R2,R9,R10,R11,R12,R13);
+    endwhile;
+    [SEMAPHORE_TABLE+4*semTableID]=pid;//Locking PID to PID
+    [PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=0;
+    R0=0;
+    [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+endif;
+if(functionNum==20) then
+    [PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=20;
+    alias semID R11;
+    alias pid R12;
+    pid=[SYSTEM_STATUS_TABLE+1];
+    semID=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    if(semID<0) then
+        R0=-1;
+        [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    if(semID>7) then
+        R0=-1;
+        [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    if([[PROCESS_TABLE +pid*16+11]*512+2*semID+496]!=1) then
+        R0=-1;
+        [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    alias semTableID R13;
+    semTableID=[[PROCESS_TABLE +pid*16+11]*512+2*semID+1+496];
+    alias i R14;
+    i=0;
+    if([SEMAPHORE_TABLE+4*semTableID]!=-1) then
+        if([SEMAPHORE_TABLE+4*semTableID]!=pid) then
+            R0=-2;//current process has not locked the semaphore
+            [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+            SP=userSP;
+            ireturn;
+        endif;
+        [SEMAPHORE_TABLE+4*semTableID]=-1;
+        while(i<16) do  
+            if(([PROCESS_TABLE+i*16+4]==WAIT_SEMAPHORE)&&([PROCESS_TABLE+i*16+5]==semTableID)) then
+                [PROCESS_TABLE+i*16+4]=READY;
+                [PROCESS_TABLE+i*16+5]=-1;
+            endif;
+            i=i+1;
+        endwhile;
+    endif;
+    [PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=0;
+    R0=0;
+    [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+endif;
+SP=userSP;
+ireturn;

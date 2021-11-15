@@ -1,0 +1,183 @@
+alias userSP R10;
+userSP=SP;
+
+alias pt R13;
+pt=PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16;
+
+[pt+13]=SP; //saving user stack pointer
+SP=[pt+11]*512-1;//switching to kernal stack
+
+alias functionNum R11;
+functionNum=[[PTBR+2*((userSP-5)/512)]*512 + (userSP-5)%512];
+
+alias retAddress R12;
+retAddress=[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512;
+
+alias fileName R6;
+fileName=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+
+if(functionNum==1) then // create file 
+    [pt+9]=1;     // mode
+    alias permission R7;
+    permission=[[PTBR+2*((userSP-3)/512)]*512 + (userSP-3)%512];
+    alias i R8;
+    i=0;
+    while(i<MAX_FILE_NUM) do
+        if([INODE_TABLE+16*i+1]==fileName) then //file exists
+            R0=0;
+            [retAddress]=R0;
+            SP=userSP;
+            ireturn;
+        endif;
+        i=i+1;
+    endwhile;
+    alias inodeIndex R9;
+    i=0;
+    while(i<MAX_FILE_NUM) do
+        if([INODE_TABLE+16*i+1]==-1) then
+            inodeIndex=i;
+            break;
+        endif;
+        i=i+1;
+    endwhile;
+    if(i==60) then         // no free inode table entry
+        R0=-1;
+        [retAddress]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    alias inodeEntry R5;
+    inodeEntry=INODE_TABLE+16*inodeIndex;
+    [inodeEntry+1]=fileName;      //file name
+    [inodeEntry+2]=0;             //file size
+    [inodeEntry+0]=DATA;          //file type
+    i=8;
+    while(i<12) do//No disk blocks are allocated to the file
+        [inodeEntry+i]=-1;
+       i=i+1;
+    endwhile;
+    alias rootEntry R4;
+    rootEntry=ROOT_FILE+8*inodeIndex;
+    [inodeEntry+3]=[pt+3]; //userid
+    [inodeEntry+4]=permission;    //permission bit
+    [rootEntry+0]=fileName;
+    [rootEntry+1]=0;
+    [rootEntry+2]=DATA;
+    [rootEntry+3]=[USER_TABLE+2*[pt+3]];
+    [rootEntry+4]=permission;
+    [pt+9]=0;
+    R0=0;
+    [retAddress]=R0;
+    SP=userSP;
+    ireturn;
+endif;
+
+if(functionNum==4) then // Delete file
+    [pt+9]=4;     // mode
+    alias i R7;
+    i=0;
+    alias inodeIndex R8;
+    while(i<MAX_FILE_NUM) do    
+        if([INODE_TABLE+16*i+1]==fileName) then
+            inodeIndex=i;
+            break;
+        endif;
+        i=i+1;
+    endwhile;
+    if(i==60) then // file not present
+        R0=0;
+        [retAddress]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    alias inodeEntry R5;
+    inodeEntry=INODE_TABLE+16*inodeIndex;
+    if([inodeEntry+0]!=DATA) then       // not a DATA file
+        R0=-1;
+        [retAddress]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    if([inodeEntry+4]==0) then 
+    //exclusive bit is set
+        if(([pt+3]!=1)&&([inodeEntry+3]!=[pt+3])) then
+        // current user is not root and current user do not own the file
+            R0=-1;
+            [retAddress]=R0;
+            SP=userSP;
+            ireturn;
+        endif;
+    endif;
+    multipush(R5,R6,R7,R8,R10,R11,R12,R13);
+    R1=4; //acquire inode
+    R2=[SYSTEM_STATUS_TABLE+1];
+    R3=inodeIndex;
+    call RESOURCE_MANAGER;
+    multipop(R5,R6,R7,R8,R10,R11,R12,R13);
+    if(R0==-1) then // file was deleted by the time of inode acquisition
+        R0=0;
+        [retAddress]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    if([FILE_STATUS_TABLE+4*inodeIndex+1]!=-1) then // file is open, cannot be deleted
+        multipush(R5,R6,R7,R8,R10,R11,R12,R13);
+        R1=5; //release inode
+        R2=[SYSTEM_STATUS_TABLE+1];
+        R3=inodeIndex;
+        call RESOURCE_MANAGER;
+        multipop(R5,R6,R7,R8,R10,R11,R12,R13);
+        R0=-2;
+        [retAddress]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    i=8;
+    alias blockNum R9;
+    alias j R14;
+    while(i<12) do
+        blockNum=[inodeEntry+i];        
+        if(blockNum!=-1) then
+            j=0;
+            while(j<4) do
+                if(([BUFFER_TABLE+4*j]==blockNum)&&([BUFFER_TABLE+4*j+1]==1)) then
+                // block is in buffer and dirty bit is set
+                    [BUFFER_TABLE+4*j+1]=0;
+                    multipush(R6,R7,R8,R9,R10,R11,R12,R13,R14);
+                    R1=4; // release block
+                    R2=blockNum;
+                    R3=[SYSTEM_STATUS_TABLE+1];
+                    call MEMORY_MANAGER;
+                    multipop(R6,R7,R8,R9,R10,R11,R12,R13,R14);
+                endif;
+                j=j+1;
+            endwhile;
+        endif;
+        i=i+1;
+    endwhile;
+    i=0;
+    while(i<16) do   // invalidating inode entry
+        [inodeEntry+i]=-1;
+        i=i+1;
+    endwhile;
+    [inodeEntry+2]=0;
+    alias rootEntry R4;
+    rootEntry=ROOT_FILE+8*inodeIndex;
+    i=0;
+    while(i<8) do    //invalidating root entry
+        [rootEntry+i]=-1;
+        i=i+1;
+    endwhile;
+    [rootEntry+1]=0;
+    multipush(R10,R12,R13);
+    R1=5; //release inode
+    R2=[SYSTEM_STATUS_TABLE+1];
+    R3=inodeIndex;
+    call RESOURCE_MANAGER;
+    multipop(R10,R12,R13);
+    [pt+9]=0;
+    R0=0;
+    [retAddress]=R0;
+    SP=userSP;
+    ireturn;
+endif;

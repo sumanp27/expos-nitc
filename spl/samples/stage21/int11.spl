@@ -1,0 +1,56 @@
+//Save user stack value, set up the kernel stack
+alias userSP R10;
+userSP=SP;
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 13]=SP;
+SP=[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 11] * 512 - 1;
+
+alias syscallnum R9;
+syscallnum=[[PTBR+2*((userSP-5)/512)]*512 + (userSP-5)%512];
+
+if(syscallnum==11)then //getpid
+   R0=[SYSTEM_STATUS_TABLE+1];
+   [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+endif;
+
+if(syscallnum==12)then //getppid
+   R0=[PROCESS_TABLE+([SYSTEM_STATUS_TABLE+1]*16)+2];
+   [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+endif;
+
+if(syscallnum==13)then //wait
+   //modeflag to syscall 13
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 13;
+  alias pid R12;
+    pid=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    if((pid==[SYSTEM_STATUS_TABLE + 1]) || ([PROCESS_TABLE+pid*16+4]==TERMINATED) || (pid>15))then
+       R0=-1;
+       [[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512]=R0;
+       SP=userSP;
+       ireturn;
+    endif;
+    [PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]  * 16 + 4]=WAIT_PROCESS;
+    [PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]  * 16 + 5]=pid;
+     multipush(R10,R11,R12);
+    call MOD_5;
+    multipop(R10,R11,R12);
+    [PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=0;
+
+endif;
+
+if(syscallnum==14)then //signal
+   //modeflag to syscall 14
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 14;
+ 
+ alias i R12;
+    i=0;
+    while(i<16)do
+    if(([PROCESS_TABLE+i*16+4]==WAIT_PROCESS)&&([PROCESS_TABLE+i*16+5]==[SYSTEM_STATUS_TABLE+1])) then
+     [PROCESS_TABLE + i * 16 + 4]=READY;
+      endif;
+      i=i+1;
+      endwhile;
+      [PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 0;
+      
+endif;
+SP=userSP;
+ireturn;

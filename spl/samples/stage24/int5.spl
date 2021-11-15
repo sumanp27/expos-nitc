@@ -1,0 +1,82 @@
+alias userSP R10;
+userSP=SP;
+
+alias pt R13;
+pt=PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16;
+
+[pt+13]=SP; //saving user stack pointer
+SP=[pt+11]*512-1;//switching to kernal stack
+
+alias functionNum R11;
+functionNum=[[PTBR+2*((userSP-5)/512)]*512 + (userSP-5)%512];
+
+alias retAddress R12;
+retAddress=[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512;
+
+if(functionNum==2) then // open system call
+    [pt+9]=2; 
+    alias fileName R5;
+    fileName=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    alias userpage R6;
+    userpage=[pt+11];
+    alias i R7;
+    i=0;
+    alias fd R8;
+    while(i<8) do 
+        if([userpage*512+496+2*i]==-1) then
+            fd=i;
+            break;
+        endif;
+        i=i+1;
+    endwhile;
+    if(i==8) then       // no free resource table entry
+        [retAddress]=-3;
+        SP=userSP;
+        ireturn;
+    endif;
+    multipush(R5,R6,R7,R8,R10,R11,R12,R13);
+    R1=3; // open
+    R2=fileName;
+    call FILE_MANAGER;
+    multipop(R5,R6,R7,R8,R10,R11,R12,R13);
+    if(R0==-1||R0==-2) then // file not dat or root , max open instances reached
+        [retAddress]=R0;
+        SP=userSP;
+        ireturn;
+    endif;
+    [userpage*512+496+2*fd]=FILE;
+    [userpage*512+496+2*fd+1]=R0; // open file entry
+    [pt+9]=0; 
+    SP=userSP;
+    [retAddress]=fd;
+    ireturn;
+endif;
+
+if(functionNum==3) then
+    [pt+9]=3; 
+    alias fd R5;
+    fd=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    if((fd<0)||(fd>7)) then // invalid fd
+        [retAddress]=-1;
+        SP=userSP;
+        ireturn;
+    endif;
+    alias fdEntry R6;
+    fdEntry=[pt+11]*512+496+2*fd;
+    if(([fdEntry]==-1)||([fdEntry]!=FILE)) then //invalid fd
+        [retAddress]=-1;
+        SP=userSP;
+        ireturn;
+    endif;
+    multipush(R5,R6,R10,R11,R12,R13);
+    R1=4; // close 
+    R2=[fdEntry+1];
+    call FILE_MANAGER;
+    multipop(R5,R6,R10,R11,R12,R13);
+    [fdEntry]=-1;
+    [fdEntry+1]=-1;
+    [pt+9]=0; 
+    SP=userSP;
+    [retAddress]=0;
+    ireturn;
+endif;

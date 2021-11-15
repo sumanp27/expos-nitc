@@ -1,0 +1,93 @@
+alias functionNum R1;
+alias currentPID R2;
+ alias word R5;
+alias ret R6;
+
+
+if(functionNum==2)then //diskload
+     alias pageno R3;
+     alias blockno R4;
+     multipush(R0,R1,R2,R3,R4);//acquiredisk
+     R1=3;
+     R2=currentPID;
+     call MOD_0;
+     multipop(R0,R1,R2,R3,R4);
+     
+      [DISK_STATUS_TABLE+2]= pageno;
+       [DISK_STATUS_TABLE+3]=blockno;
+        [DISK_STATUS_TABLE+1]=0;
+         load(pageno,blockno);
+       [PROCESS_TABLE+(currentPID*16)+4] = WAIT_DISK;   
+        multipush(R0,R1,R2,R3,R4);   //invokescheduler 
+    call MOD_5;
+    multipop(R0,R1,R2,R3,R4);
+   return;
+endif;
+if(functionNum==3)then //terminal write
+   //Calling Acquire Terminal :-
+   multipush(R0,R1,R2,R3,R4,R5,R6);
+   R1=8;
+   R2=currentPID;
+   call MOD_0;
+   multipop(R0,R1,R2,R3,R4,R5,R6);
+   
+   print word;
+   
+   //Calling release Terminal :-
+   multipush(R0,R1,R2,R3,R4,R5,R6);
+    R1=9;
+   R2=currentPID;
+   call MOD_0;
+   ret=R0;
+   multipop(R0,R1,R2,R3,R4,R5,R6);
+   return;
+endif;
+if(functionNum==4)then //terminal read
+   //Calling Acquire Terminal :-
+   multipush(R0,R1,R2,R3,R4,R5,R6);
+   R1=8;
+   R2=currentPID;
+   call MOD_0;
+   multipop(R0,R1,R2,R3,R4,R5,R6);
+   breakpoint;
+   read;
+  
+  
+
+   
+   [PROCESS_TABLE + currentPID * 16 + 4]=WAIT_TERMINAL;
+   multipush(R0,R1,R2,R3,R4,R5,R6);
+   call MOD_5;
+   multipop(R0,R1,R2,R3,R4,R5,R6);
+   
+    alias physicalPageNum R4;
+    alias offset R5;
+    
+    physicalPageNum=[PTBR+2*(word/512)];
+    offset=word%512;
+    [physicalPageNum*512+offset]=[PROCESS_TABLE+(currentPID*16)+8]; //storing input buffer of process
+    return;
+endif;
+
+if(functionNum==1)then //diskstore 
+   alias pageno R3;
+     alias blockno R4;
+     multipush(R0,R1,R2,R3,R4);
+     R1=3;
+     R2=currentPID;
+     call MOD_0;
+     multipop(R0,R1,R2,R3,R4);
+     
+    [DISK_STATUS_TABLE+1]=1;
+    [DISK_STATUS_TABLE+2]=pageno;
+    [DISK_STATUS_TABLE+3]=blockno;
+    store(pageno,blockno);
+    
+    [PROCESS_TABLE+(currentPID*16)+4] = WAIT_DISK;
+    multipush(R1,R2,R3,R4);
+    call MOD_5;
+    multipop(R1,R2,R3,R4);
+    return;
+
+endif;
+   

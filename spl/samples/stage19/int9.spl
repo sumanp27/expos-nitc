@@ -1,0 +1,133 @@
+breakpoint;
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 9;
+alias usersp R0;
+usersp = SP;
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 13] = SP;
+SP = [PROCESS_TABLE + ([SYSTEM_STATUS_TABLE + 1] * 16) + 11] * 512 - 1;
+
+//getting filename
+
+alias filename R4;
+filename = [[PTBR + 2*((usersp-4)/512)]*512 + (usersp-4)%512];
+
+//file in disk
+
+
+alias inIndex R5;
+alias i R6;
+inIndex = -1;
+i = 0;
+while(i<MAX_FILE_NUM) do
+	//breakpoint;
+	if([INODE_TABLE +16*i +1]== filename) then
+		inIndex = i;
+		break;
+	endif;
+	i=i+1;
+endwhile;
+
+if(inIndex == -1) then
+alias ret R7;
+ret = [PTBR + ((usersp-1)/512)*2]*512 + (usersp-1)%512;
+[ret] = -1;
+//failure return -1 and ireturn to user
+SP = usersp;
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 0;
+ireturn;
+endif;
+
+//breakpoint;
+//exit process
+alias cpid R8;
+cpid = [SYSTEM_STATUS_TABLE + 1];
+multipush(R0,R1,R2,R3,R4,R5,R6,R7,R8);
+R1 = 3;
+R2 = cpid;
+
+call MOD_1;
+multipop(R0,R1,R2,R3,R4,R5,R6,R7,R8);
+
+//reclaiming userpage
+
+alias uareapage R9;
+uareapage = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1]*16 + 11];
+
+i = 496;
+while(i < 512) do
+    [uareapage*512 + i] = -1;
+    i = i + 1;
+endwhile;
+
+// sharing page incrementing
+[MEMORY_FREE_LIST + uareapage] = [MEMORY_FREE_LIST + uareapage] + 1;
+
+//no of free pages
+[SYSTEM_STATUS_TABLE + 2] = [SYSTEM_STATUS_TABLE + 2] - 1;
+
+//setting up kernel stack for new process
+SP = uareapage*512 - 1;
+//breakpoint;
+
+//newprocess
+[PROCESS_TABLE + 16*cpid + 4] = RUNNING;
+[PROCESS_TABLE + 16*cpid + 7] = inIndex;
+
+//breakpoint;
+//setting pagetable
+PTBR = PAGE_TABLE_BASE + 20*cpid;
+
+//Library 
+[PTBR+0]=63;
+[PTBR+1]="0100";
+[PTBR+2]=64;
+[PTBR+3]="0100";
+
+//invalidating heap
+[PTBR+4] = -1;
+[PTBR+5] = "0000";
+[PTBR+6] = -1;
+[PTBR+7] = "0000";
+
+
+//stack
+multipush(R0,R1,R2,R3,R4,R5,R6,R7,R8,R9); 
+R1 = 1;
+call MOD_2;
+[PTBR + 16] = R0;
+[PTBR + 17] = "0110";
+
+multipop(R0,R1,R2,R3,R4,R5,R6,R7,R8,R9); 
+
+multipush(R0,R1,R2,R3,R4,R5,R6,R7,R8,R9); 
+R1 = 1;
+call MOD_2;
+[PTBR + 18] = R0;
+[PTBR + 19] = "0110";
+
+multipop(R0,R1,R2,R3,R4,R5,R6,R7,R8,R9);
+
+//loading code
+multipush(R0,R1,R2,R3,R4,R5,R6,R7,R8,R9);
+R1 = 5;
+R2 = [INODE_TABLE + 16*inIndex + 8];
+call MOD_2;
+[PTBR + 8] = R0;
+[PTBR + 9] = "0100";
+multipop(R0,R1,R2,R3,R4,R5,R6,R7,R8,R9);
+
+[DISK_MAP_TABLE + [SYSTEM_STATUS_TABLE + 1]*10 + 2] = -1;
+[DISK_MAP_TABLE + [SYSTEM_STATUS_TABLE + 1]*10 + 3] = -1;
+[DISK_MAP_TABLE + [SYSTEM_STATUS_TABLE + 1]*10 + 4] = [INODE_TABLE + 16*inIndex + 8]; 
+[DISK_MAP_TABLE + [SYSTEM_STATUS_TABLE + 1]*10 + 5] = [INODE_TABLE + 16*inIndex + 9];
+[DISK_MAP_TABLE + [SYSTEM_STATUS_TABLE + 1]*10 + 6] = [INODE_TABLE + 16*inIndex + 10];
+[DISK_MAP_TABLE + [SYSTEM_STATUS_TABLE + 1]*10 + 7] = [INODE_TABLE + 16*inIndex + 11];
+[DISK_MAP_TABLE + [SYSTEM_STATUS_TABLE + 1]*10 + 8] = -1;
+[DISK_MAP_TABLE + [SYSTEM_STATUS_TABLE + 1]*10 + 9] = -1;
+
+//starting new process
+[[PTBR+16]*512] = [[PTBR+8]*512+1];
+SP = 8*512;
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 0;
+breakpoint;
+ireturn;
+

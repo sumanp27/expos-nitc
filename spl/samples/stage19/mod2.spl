@@ -1,0 +1,101 @@
+//memory manager
+//breakpoint;
+alias funcnum R1;
+alias pagenum R2;
+alias count R3;
+
+//get code page
+if(funcnum == 5) then
+	alias blocknum R2;
+	count = 0;
+	alias i R4;
+	while(count<16) do
+		i=4;
+		while(i<8) do
+			if([DISK_MAP_TABLE + count*10 + i] == blocknum) then 
+				if([PAGE_TABLE_BASE + count*20 + 2*i] != -1) then
+					R0 = [PAGE_TABLE_BASE + count*20 + 2*i];
+					[MEMORY_FREE_LIST + R0] = [MEMORY_FREE_LIST + R0] +1;
+					return;
+				endif;
+			endif;
+			i=i+1;
+		endwhile;
+		count = count+1;
+	endwhile;
+	alias pagenum R9;
+
+	multipush(R1,R2,R3,R4,R5,R6,R7,R8,R9);
+	R1 = 1;
+	call MOD_2;
+	pagenum = R0;
+	count = R0;
+	R1 = 2;
+	R4 = blocknum;
+	R2 = [SYSTEM_STATUS_TABLE + 1];
+	R3 = pagenum;
+	breakpoint;
+	call MOD_4;
+	multipop(R1,R2,R3,R4,R5,R6,R7,R8,R9);
+	breakpoint;
+	return;
+endif;
+	
+
+//get free page
+if(funcnum == 1) then
+	//increament wait_mem processes
+	[SYSTEM_STATUS_TABLE+3]=[SYSTEM_STATUS_TABLE+3]+1;
+	
+	//call next process till there is a free page
+	while([SYSTEM_STATUS_TABLE + 2]==0) do
+		[PROCESS_TABLE + [SYSTEM_STATUS_TABLE]*16 + 4]= WAIT_MEM;
+		
+		//call scheduler
+		multipush(R0,R1,R2,R3);
+		call MOD_5;
+		multipop(R0,R1,R2,R3);
+	endwhile;
+	
+	//got free page
+	[SYSTEM_STATUS_TABLE + 3] = [SYSTEM_STATUS_TABLE + 3] - 1;
+	[SYSTEM_STATUS_TABLE + 2] = [SYSTEM_STATUS_TABLE + 2] - 1;
+	
+	count=0;
+	while(count<128) do 
+		if([MEMORY_FREE_LIST + count] == 0) then
+			[MEMORY_FREE_LIST + count]=1;
+			break;
+		endif;
+		count=count+1;
+	endwhile;
+	R0=count;
+	return;
+endif;
+
+//release page
+if(funcnum == 2) then
+//decrement no of processes using pages
+	[MEMORY_FREE_LIST + R2] = [MEMORY_FREE_LIST + R2] - 1;
+	if([MEMORY_FREE_LIST + R2]==0) then
+		[SYSTEM_STATUS_TABLE + 2] = [SYSTEM_STATUS_TABLE + 2] + 1;
+		count=0;
+		while(count<16) do
+			if([PROCESS_TABLE + 16*count + 4] ==WAIT_MEM) then
+				[PROCESS_TABLE + 16*count + 4] = READY;
+				break;
+			endif;
+			count=count+1;
+		endwhile;
+	endif;
+	return;
+endif;
+
+//release block
+if(funcnum == 4) then
+	alias blocknum R2;
+	[DISK_FREE_LIST + blocknum] = [DISK_FREE_LIST + blocknum] - 1;
+	return;
+endif;
+
+

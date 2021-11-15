@@ -1,0 +1,64 @@
+alias userSP R10;
+userSP=SP;
+[PROCESS_TABLE+([SYSTEM_STATUS_TABLE+1]*16)+13]=SP; //saving user stack pointer
+SP=[PROCESS_TABLE+([SYSTEM_STATUS_TABLE+1]*16)+11]*512-1;//switching to kernal stack
+[PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=15;
+
+alias currentPID R11;
+alias retadd R12;
+currentPID=[SYSTEM_STATUS_TABLE+1];
+retadd=[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512;
+
+if(currentPID!=1 || ([PROCESS_TABLE+([SYSTEM_STATUS_TABLE+1]*16)+3]!=1))then
+
+   R0=-1;
+   [retadd]=R0;
+   [PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+9]=0;
+   SP=userSP;
+   ireturn;
+endif;
+
+alias pageNum R8;
+alias blockNum R9;
+
+pageNum=61;          // disk free list
+blockNum=2;
+multipush(R8,R9,R10,R11,R12);
+R1=1; //disk store
+R2=currentPID;
+R3=pageNum;
+R4=blockNum;
+call DEVICE_MANAGER;
+multipop(R8,R9,R10,R11,R12);
+
+pageNum=62;          // root file
+blockNum=5;
+multipush(R8,R9,R10,R11,R12);
+R1=1; //disk store
+R2=currentPID;
+R3=pageNum;
+R4=blockNum;
+call DEVICE_MANAGER;
+multipop(R8,R9,R10,R11,R12);
+
+pageNum=59;          // inode list and user table
+blockNum=3;
+multipush(R8,R9,R10,R11,R12);
+R1=1; //disk store
+R2=currentPID;
+R3=pageNum;
+R4=blockNum;
+call DEVICE_MANAGER;
+multipop(R8,R9,R10,R11,R12);
+
+pageNum=60;          //inode list and usertable
+blockNum=4;
+multipush(R8,R9,R10,R11,R12);
+R1=1; //disk store
+R2=currentPID;
+R3=pageNum;
+R4=blockNum;
+call DEVICE_MANAGER;
+multipop(R8,R9,R10,R11,R12);
+
+halt;

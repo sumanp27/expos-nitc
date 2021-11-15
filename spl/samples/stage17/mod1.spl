@@ -1,0 +1,53 @@
+alias funnum R1;
+alias pid R2;
+alias userpage R3;
+alias i R4;
+
+if(funnum==2)then //free userareapage
+  userpage=[PROCESS_TABLE + pid* 16 + 11];
+    multipush(R0,R1,R2,R3,R4);
+    R1=2; //release page
+    R2=userpage;
+    call MOD_2; 
+    multipop(R0,R1,R2,R3,R4);
+    return;
+endif;
+
+if(funnum==3)then
+    multipush(R0,R1,R2,R3,R4);
+    R1=4;
+    R2=pid;
+    call MOD_1;
+    multipop(R0,R1,R2,R3,R4);
+     multipush(R0,R1,R2,R3,R4);
+    R1=2; 
+    R2=pid;
+    call MOD_1; 
+    multipop(R0,R1,R2,R3,R4);
+    [PROCESS_TABLE + pid* 16 + 4]=TERMINATED;
+    return;
+endif;
+
+if(funnum==4)then
+   PTBR = PAGE_TABLE_BASE + pid*20;
+    [PTBR+0]=-1; 
+    [PTBR+1]="0000";
+    [PTBR+2]=-1;
+    [PTBR+3]="0000";
+  i=4;
+   while (i<20) do 
+
+       // release page 
+                        multipush(R0,R1,R2,R3,R4);
+                        R1 = 2;
+                        R2 = [PTBR +i];
+                        call MOD_2 ;
+                        multipop(R0,R1,R2,R3,R4);
+
+       // invalidate each pagetable entry
+                        [PTBR + i] = -1;
+                        [PTBR + i+1] = "0000";
+                    i = i+2 ;
+    endwhile;
+     return;
+endif;

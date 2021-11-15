@@ -1,0 +1,50 @@
+alias funnum R1;
+alias pageno R2;
+
+alias i R3;
+if(funnum==1)then //getfreepage
+
+   [SYSTEM_STATUS_TABLE+3]=[SYSTEM_STATUS_TABLE+3]+1;//increment wait_mem_count
+   
+   while([SYSTEM_STATUS_TABLE+2]==0)do
+     [PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+4]=WAIT_MEM;
+     multipush(R0,R1 ,R2 , R3 );
+     call MOD_5;
+     multipop(R0,R1, R2 , R3 );
+   endwhile;
+   
+   //Decrement the WAIT_MEM_COUNT field and MEM_FREE_COUNT 
+  [SYSTEM_STATUS_TABLE+3]=[SYSTEM_STATUS_TABLE+3]-1;
+  [SYSTEM_STATUS_TABLE+2]=[SYSTEM_STATUS_TABLE+2]-1;
+  
+  i=0;
+  while(i<MAX_MEM_PAGE)do //128
+       if([MEMORY_FREE_LIST + i]==0) then
+            [MEMORY_FREE_LIST + i]=1;
+            R0=i; 
+            breakpoint;
+            return;
+        endif;
+        i=i+1;
+    endwhile;
+endif;
+
+
+if(funnum==2)then //releasepage
+   [MEMORY_FREE_LIST+pageno]=[MEMORY_FREE_LIST+pageno]-1;
+   if([MEMORY_FREE_LIST+pageno]==0)then
+       [SYSTEM_STATUS_TABLE+2]=[SYSTEM_STATUS_TABLE+2]+1;
+       i=0;
+       while(i<16)do
+          if([PROCESS_TABLE+16*i+4]==WAIT_MEM)then
+            [PROCESS_TABLE+16*i+4]=READY;
+            break;
+          endif;
+         i=i+1;
+        endwhile;
+     endif;
+     breakpoint;
+     return;
+
+endif;
+  

@@ -1,0 +1,28 @@
+int main()
+{
+decl
+    int temp,num,prime,loop;
+enddecl
+begin
+    num=2;
+   
+    while ( num <= 100) do
+      prime=1;
+      loop=2;
+      while(loop<num) do
+         if((num % loop)==0)then
+              prime=0;
+              break;
+         endif;
+            loop=loop + 1;
+      endwhile;
+       if(prime==1)then
+          temp = exposcall ( "Write" , -2, num );
+       endif;
+       num = num + 1;
+     
+     endwhile;
+    
+    return 0;
+end
+}
