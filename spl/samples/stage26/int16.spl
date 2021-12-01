@@ -1,0 +1,167 @@
+alias userSP R12;
+userSP=SP;
+
+alias pt R13;
+pt=PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16;
+
+alias retAddress R14;
+retAddress=[PTBR+2*((userSP-1)/512)]*512 + (userSP-1)%512;
+
+alias functionNum R15;
+functionNum=[[PTBR+2*((userSP-5)/512)]*512 + (userSP-5)%512];
+
+if(functionNum==22) then // new user
+    [pt+9]=22;
+    alias userName R10;
+    alias Pwd R11;
+    userName=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    Pwd=[[PTBR+2*((userSP-3)/512)]*512+((userSP-3)%512)];
+    if(([SYSTEM_STATUS_TABLE]!=1)||([SYSTEM_STATUS_TABLE+1]!=2)) then // if current user is not root or current process is not shell
+        [retAddress]=-2;   // permission denied
+        [pt+9]=0;
+        ireturn;
+    endif;
+    alias userID R9;
+    alias i R8;
+    i=0;
+    while(i<16) do
+        if([USER_TABLE+2*i]==userName) then // user already exists
+            [retAddress]=-1;
+            [pt+9]=0;
+            ireturn;
+        endif;
+        i=i+1;
+    endwhile;
+    i=0;
+    while(i<16) do
+        if([USER_TABLE+2*i]==-1) then 
+            userID=i;
+            break;
+        endif;
+        i=i+1;
+    endwhile;
+    if(i==16) then // no free entry
+        [retAddress]=-3;
+        [pt+9]=0;
+        ireturn;
+    endif;
+    encrypt Pwd;
+    [USER_TABLE+2*userID]=userName;
+    [USER_TABLE+2*userID+1]=Pwd;
+    [pt+9]=0;
+    [retAddress]=0;
+    ireturn;
+endif;
+
+if(functionNum==23) then // remove user
+    [pt+9]=23;
+    alias userName R10;
+    userName=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    if(([SYSTEM_STATUS_TABLE]!=1)||([SYSTEM_STATUS_TABLE+1]!=2)||(userName=="root")||(userName=="kernel")) then
+    // if current user is not root or current process is not shell or user to be removed is root or kernel
+        [retAddress]=-2;   // permission denied
+        [pt+9]=0;
+        ireturn;
+    endif;
+    alias userID R9;
+    alias i R8;
+    i=0;
+    while(i<16) do
+        if([USER_TABLE+2*i]==userName) then 
+            userID=i;
+            break;
+        endif;
+        i=i+1;
+    endwhile;
+    if(i==16) then // user doesnot exist
+        [retAddress]=-1;
+        [pt+9]=0;
+        ireturn;
+    endif;
+    i=0;
+    while(i<MAX_FILE_NUM) do
+        if([ROOT_FILE+8*i+3]==userName) then  // undeleted files exist for given user
+            [retAddress]=-3;
+            [pt+9]=0;
+            ireturn;
+        endif;
+        i=i+1;
+    endwhile;
+    [USER_TABLE+2*userID]=-1;
+    [USER_TABLE+2*userID+1]=-1;
+    [pt+9]=0;
+    [retAddress]=0;
+    ireturn;
+endif;
+
+if(functionNum==24) then // set password
+    [pt+9]=24;
+    alias userName R10;
+    alias Pwd R11;
+    userName=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    Pwd=[[PTBR+2*((userSP-3)/512)]*512+((userSP-3)%512)];
+    if([SYSTEM_STATUS_TABLE+1]!=2) then // if current process is not shell then
+        [retAddress]=-1; // unauthorised attempt
+        [pt+9]=0;
+        ireturn;
+    endif;
+    alias userID R9;
+    alias i R8;
+    i=0;
+    while(i<16) do
+        if([USER_TABLE+2*i]==userName) then 
+            userID=i;
+            break;
+        endif;
+        i=i+1;
+    endwhile;
+    if(i==16) then 
+        [retAddress]=-2;  // user doesnot exist
+        [pt+9]=0;
+        ireturn;
+    endif;
+    if(([PROCESS_TABLE+[SYSTEM_STATUS_TABLE+1]*16+3]!=userID)&&([SYSTEM_STATUS_TABLE]!=1)) then
+        [retAddress]=-1;  // unauthorised attempt
+        [pt+9]=0;
+        ireturn;
+    endif;
+    encrypt Pwd;
+    [USER_TABLE+2*userID+1]=Pwd;
+    [pt+9]=0;
+    [retAddress]=0;
+    ireturn;
+endif;
+
+if(functionNum==26) then // get userID
+    [pt+9]=26;
+    alias userName R10;
+    userName=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    alias userID R9;
+    alias i R8;
+    i=0;
+    while(i<16) do
+        if([USER_TABLE+2*i]==userName) then 
+            [retAddress]=i;
+            [pt+9]=0;
+            ireturn;
+        endif;
+        i=i+1;
+    endwhile;
+    [retAddress]=-1; //invalid userName
+    [pt+9]=0;
+    ireturn;
+endif;
+
+if(functionNum==25) then // get userName
+    [pt+9]=25;
+    alias userID R10;
+    userID=[[PTBR+2*((userSP-4)/512)]*512 + (userSP-4)%512];
+    if((userID<0)||(userID>15)||([USER_TABLE+2*userID]==-1)) then
+        [retAddress]=-1; // invalid userID
+        [pt+9]=0;
+        ireturn;
+    endif;
+    [retAddress]=[USER_TABLE+2*userID];
+    [pt+9]=0;
+    ireturn;
+endif;
